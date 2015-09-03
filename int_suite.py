@@ -53,7 +53,11 @@ def create_zoo_repo(repo_id):
     feed = "http://repos.fedorapeople.org/repos/pulp/pulp/demo_repos/zoo/"
     cmd = "pulp-admin rpm repo create --repo-id={repo} --feed={feed} --relative-url={url}".format(
         repo=repo_id, url=repo_id, feed=feed)
-    print cmd
+    subprocess.call(cmd, shell=True)
+
+
+def delete_repo(repo_id):
+    cmd = "pulp-admin rpm repo delete --repo-id={repo}".format(repo=repo_id)
     subprocess.call(cmd, shell=True)
 
 
@@ -93,6 +97,13 @@ def delete_importer(repo_id, importer_id):
     return make_http_request(url, 'DELETE')
 
 
+def update_importer(repo_id, importer_id, importer_config):
+    url = 'v2/repositories/{repo_id}/importers/{importer_id}/'.format(repo_id=repo_id,
+                                                                      importer_id=importer_id)
+    config = '\'{"test": "value"}\''
+    return make_http_request(url, 'PUT', 'importer_config:={config}'.format(config=config))
+
+
 def initialize_from_branch(branch):
     gco(branch)
     drop_db()
@@ -101,7 +112,7 @@ def initialize_from_branch(branch):
     admin_login()
 
 
-class TestImporters(unittest.TestCase):
+class PulpTest(unittest.TestCase):
 
     def assert_same(self, obj_1, obj_2, ignore_values=None, dropped=None):
         if type(obj_1) != type(obj_2):
@@ -135,14 +146,27 @@ class TestImporters(unittest.TestCase):
         else:
             self.assertEqual(obj_1, obj_2)
 
+
+class TestRepos(PulpTest):
+
+    def test_importers_removed_on_delete(self):
+        initialize_from_branch('importers-mongoengine')
+        create_zoo_repo('test')
+        test_importers = json.loads(get_importers('test'))
+        self.assertTrue(test_importers)
+        delete_repo('test')
+        delete_test_importers = json.loads(get_importers('test'))
+        self.assertFalse(delete_test_importers)
+
+
+class TestImporters(PulpTest):
+
     def setUp(self):
-        # initialize_from_branch('master')
-        # create_zoo_repo('test')
-        # create_zoo_repo('othertest')
         self.master_repos_importers = [{u'display_name': None, u'description': None, u'last_unit_added': None, u'notes': {u'_repo-type': u'rpm-repo'}, u'last_unit_removed': None, u'content_unit_counts': {}, u'_ns': u'repos', u'importers': [{u'repo_id': u'test', u'_href': u'/pulp/api/v2/repositories/test/importers/yum_importer/', u'_ns': u'repo_importers', u'importer_type_id': u'yum_importer', u'last_sync': None, u'scheduled_syncs': [], u'_id': {u'$oid': u'55e0b9dae779895e67cabfe2'}, u'config': {u'feed': u'http://repos.fedorapeople.org/repos/pulp/pulp/demo_repos/zoo/'}, u'id': u'yum_importer'}], u'_id': {u'$oid': u'55e0b9dae779895e67cabfe1'}, u'id': u'test', u'_href': u'/pulp/api/v2/repositories/test/'}, {u'display_name': None, u'description': None, u'last_unit_added': None, u'notes': {u'_repo-type': u'rpm-repo'}, u'last_unit_removed': None, u'content_unit_counts': {}, u'_ns': u'repos', u'importers': [{u'repo_id': u'othertest', u'_href': u'/pulp/api/v2/repositories/othertest/importers/yum_importer/', u'_ns': u'repo_importers', u'importer_type_id': u'yum_importer', u'last_sync': None, u'scheduled_syncs': [], u'_id': {u'$oid': u'55e0b9dbe779895e6641a443'}, u'config': {u'feed': u'http://repos.fedorapeople.org/repos/pulp/pulp/demo_repos/zoo/'}, u'id': u'yum_importer'}], u'_id': {u'$oid': u'55e0b9dbe779895e6641a442'}, u'id': u'othertest', u'_href': u'/pulp/api/v2/repositories/othertest/'}]  # noqa
         self.master_test_importers = [{u'scratchpad': None, u'_href': u'/pulp/api/v2/repositories/test/importers/yum_importer/', u'_ns': u'repo_importers', u'importer_type_id': u'yum_importer', u'last_sync': None, u'scheduled_syncs': [], u'repo_id': u'test', u'_id': {u'$oid': u'55e0b9dae779895e67cabfe2'}, u'config': {u'feed': u'http://repos.fedorapeople.org/repos/pulp/pulp/demo_repos/zoo/'}, u'id': u'yum_importer'}]  # noqa
         self.master_test_yum_importer = {u'scratchpad': None, u'_href': u'/pulp/api/v2/repositories/test/importers/yum_importer/', u'_ns': u'repo_importers', u'importer_type_id': u'yum_importer', u'last_sync': None, u'scheduled_syncs': [], u'repo_id': u'test', u'_id': {u'$oid': u'55e0bc65e779897d71226938'}, u'config': {u'feed': u'http://repos.fedorapeople.org/repos/pulp/pulp/demo_repos/zoo/'}, u'id': u'yum_importer'}  # noqa
         self.master_test_handmade_yum_importer = [{"_href": u"/pulp/api/v2/repositories/test/importers/yum_importer/", "_id": {"$oid": "55e49e2ce7798926214d6125"}, "_ns": u"repo_importers", "config": {}, "id": u"yum_importer", u"importer_type_id": u"yum_importer", u"last_sync": None, u"repo_id": u"test", u"scratchpad": None}]  # noqa
+        self.master_test_updated_yum_importer = [{"_href": u"/pulp/api/v2/repositories/test/importers/yum_importer/", "_id": {"$oid": "55e49e2ce7798926214d6125"}, "_ns": u"repo_importers", "config": {"test": u"value"}, "id": u"yum_importer", u"importer_type_id": u"yum_importer", u"last_sync": None, u"repo_id": u"test", u"scratchpad": None}]  # noqa
 
     def test_upgrade(self):
         initialize_from_branch('master')
@@ -190,6 +214,11 @@ class TestImporters(unittest.TestCase):
         create_importer('test', 'yum_importer')
         self.assert_same(json.loads(get_importers('test')), self.master_test_handmade_yum_importer,
                          ignore_values=['$oid'])
+        # PUT /repositories/test/importers/<importer_id>/
+        update_importer("test", "yum_importer", {"test": "value"})
+        self.assert_same(json.loads(get_importers('test')), self.master_test_updated_yum_importer,
+                         ignore_values=['$oid'])
+
         # DELETE /repositories/test/importers/<importer_id>/
         delete_importer('test', 'yum_importer')
         self.assertEqual(json.loads(get_importers('test')), [])
